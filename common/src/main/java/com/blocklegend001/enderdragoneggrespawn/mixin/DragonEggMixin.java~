@@ -1,0 +1,141 @@
+package com.blocklegend001.enderdragoneggrespawn.mixin;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.dimension.end.EndDragonFight;
+import org.spongepowered.asm.mixin.Final;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@Mixin(value = EndDragonFight.class, priority = Integer.MIN_VALUE)
+public class DragonEggMixin {
+    @Shadow @Final
+    private ServerLevel level;
+
+    @Shadow
+    private boolean previouslyKilled;
+
+    @Shadow @Final
+    private BlockPos origin;
+
+    @Inject(method = "setDragonKilled", at = @At("HEAD"))
+    private void onDragonKilled(EnderDragon dragon, CallbackInfo ci) {
+        if (this.previouslyKilled) {
+            BlockPos eggSpawnPos = searchEggSpawnPos(getPosAbovePortal(this.origin));
+            this.level.setBlockAndUpdate(eggSpawnPos, Blocks.DRAGON_EGG.defaultBlockState());
+        }
+    }
+
+    private BlockPos getPosAbovePortal(BlockPos origin) {
+        BlockPos eggSpawnPos = new BlockPos(origin);
+
+        while (this.level.getBlockState(origin).is(Blocks.BEDROCK)) {
+            origin = origin.above();
+        }
+        return eggSpawnPos;
+    }
+
+    private BlockPos searchEggSpawnPos(BlockPos posAbovePortal) {
+        BlockPos eggSpawnPos = new BlockPos(posAbovePortal);
+        BlockState blockState;
+
+        while (!isUpperWorldLimit(eggSpawnPos)) {
+            blockState = this.level.getBlockState(eggSpawnPos);
+
+            if (blockState.isAir())
+                return eggSpawnPos;
+
+            else if (!blockState.is(Blocks.DRAGON_EGG))
+                return searchEggSpawnPos(posAbovePortal);
+
+            eggSpawnPos = eggSpawnPos.above();
+        }
+        return searchEggSpawnPosExtended(posAbovePortal);
+    }
+
+    private BlockPos searchEggSpawnPosExtended(BlockPos abovePortalPos) {
+        List<BlockPos> blockPosList = new ArrayList<>();
+
+        int centerX = abovePortalPos.getX();
+        int centerZ = abovePortalPos.getZ();
+        int minSearchRadius = 4;
+        int maxSearchRadius = 12;
+        int searchHeight = 3;
+        int x, z, delta, centerY;
+
+        for (int radius = minSearchRadius; radius <= maxSearchRadius; radius++) {
+            for (int height = 0; height < searchHeight; height++) {
+                x = 0;
+                z = radius;
+                delta = 3 - (2 * radius);
+                centerY = abovePortalPos.getY() + height;
+
+                while (x <= z) {
+                    blockPosList.add(new BlockPos(centerX + x, centerY, centerZ + z));
+                    blockPosList.add(new BlockPos(centerX + x, centerY, centerZ - z));
+                    blockPosList.add(new BlockPos(centerX - x, centerY, centerZ + z));
+                    blockPosList.add(new BlockPos(centerX - x, centerY, centerZ - z));
+                    blockPosList.add(new BlockPos(centerX + z, centerY, centerZ + x));
+                    blockPosList.add(new BlockPos(centerX + z, centerY, centerZ - x));
+                    blockPosList.add(new BlockPos(centerX - z, centerY, centerZ + x));
+                    blockPosList.add(new BlockPos(centerX - z, centerY, centerZ - x));
+
+                    BlockPos airBlockPos = searchLowerAirBlockPos(blockPosList);
+
+                    if (airBlockPos != null)
+                        return airBlockPos;
+                    blockPosList.clear();
+
+                    if (delta < 0)
+                        delta += 4 * x + 6;
+                    else
+                        delta += 4 * (x - z--) + 10;
+                    x++;
+                }
+            }
+        }
+        return abovePortalPos;
+    }
+
+    private BlockPos searchLowerAirBlockPos(List<BlockPos> blockPosList) {
+        for (BlockPos blockPos : blockPosList)
+            if (getBlockState(blockPos).isAir()) {
+                BlockPos lowerAirBlockPos = getLowerAirBlockPos(blockPos);
+                BlockPos bottomBlockPos = lowerAirBlockPos.below();
+                BlockState bottomBlockState = getBlockState(bottomBlockPos);
+
+                if (bottomBlockState.isSolidRender(this.level, bottomBlockPos) && !bottomBlockState.is(Blocks.BEDROCK))
+                    return lowerAirBlockPos;
+            }
+        return null;
+    }
+
+    private BlockPos getLowerAirBlockPos(BlockPos originBlockPos) {
+        if(!getBlockState(originBlockPos.below()).isAir())
+            return originBlockPos;
+
+        BlockPos bottomBlockPos = new BlockPos(originBlockPos);
+
+        while (bottomBlockPos.getY() > this.level.getMinBuildHeight() && getBlockState(bottomBlockPos.above()).isAir()) {
+            bottomBlockPos = bottomBlockPos.above();
+        }
+        return bottomBlockPos;
+    }
+
+    private boolean isUpperWorldLimit(BlockPos blockPos) {
+        return blockPos.getY() >= this.level.getHeight();
+    }
+
+    private BlockState getBlockState(BlockPos blockPos) {
+        return this.level.getBlockState(blockPos);
+    }
+}
