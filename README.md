@@ -1,8 +1,6 @@
 # Ender Dragon Egg Respawn
 
-This mod adds a new armor set called "Gilded Netherite"
-When equipped this armor, piglin will be peaceful.
-To craft it, just combine a piece of netherite armor with a gold ingot in the smithing table
+This mod let spawn a new Dragon Egg every time the Ender Dragon is killed
 
 #### Downloads
 
